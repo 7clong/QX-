@@ -1,101 +1,82 @@
 /**
- * shuqi_ad_clean.js
- * Quantumult X - script-response-body
- * 目标：通用清理书旗小说接口中的广告字段，尽量不碰正文；非 JSON 响应直接放行
+ * Quantumult X script-response-body
+ * 书旗小说：只清广告，不动正文；非 JSON 原样放行
+ * 重点处理章节间插屏、开屏、预加载、banner/promotion 等
  */
+(function () {
+  function scrub(obj) {
+    if (!obj || typeof obj !== "object") return obj;
 
-function scrub(obj) {
-  if (!obj || typeof obj !== "object") return obj;
+    // 广告容器/字段黑名单
+    const adKeys = new Set([
+      "ad","ads","adList","ad_list","ad_info","adInfo","advert","advertList","advert_info",
+      "advertisement","advertisement_info","promotion","promotions","marketing","market",
+      "banner","bannerList","popup","popups","interstitial","insert","splash","open_ad",
+      "reward","rewardAd","rewarded","preloadAd","preload","adSlot","adslot","ad_slot",
+      "track","trackInfo","trace","trace_id","adid","ad_id","adConfig","ad_config"
+    ]);
 
-  // 广告容器常用键（归纳多版本字段）
-  const adKeys = new Set([
-    "ad", "ads", "ad_list", "adList", "adInfo", "ad_info", "adItems",
-    "advert", "advertise", "advertisement", "advertisement_info",
-    "banner", "bannerList", "banner_ad",
-    "splash", "openScreenAd", "startupAd", "bootAd",
-    "pop", "popup", "popupAd", "dialogAd",
-    "recommend_ad", "feed_ad", "feedAd",
-    "promotion", "promotions", "activity_ad", "marketing",
-    "adslot", "ad_slot", "adpositions", "ad_position",
-    "videoAd", "rewardAd", "incentiveAd"
-  ]);
+    const seen = new Set([obj]);
+    const stack = [obj];
 
-  // 列表项中的广告提示字段
-  const adItemHints = new Set([
-    "is_ad", "isAd", "adType", "ad_id", "adId", "adMark", "ad_label", "adTag",
-    "adTrace", "trace_id", "adTraceId", "click_url", "clickUrl", "landing_url"
-  ]);
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const k of Object.keys(cur)) {
+        const v = cur[k];
 
-  const seen = new Set();
-  const stack = [obj];
-
-  while (stack.length) {
-    const cur = stack.pop();
-    if (!cur || typeof cur !== "object" || seen.has(cur)) continue;
-    seen.add(cur);
-
-    for (const k of Object.keys(cur)) {
-      const v = cur[k];
-
-      // 1) 命中广告容器键：清空
-      if (adKeys.has(k)) {
-        if (Array.isArray(v)) cur[k] = [];
-        else if (v && typeof v === "object") cur[k] = {};
-        else cur[k] = null;
-        continue;
-      }
-
-      // 2) 对数组，过滤掉带广告特征的元素
-      if (Array.isArray(v)) {
-        cur[k] = v.filter(it => {
-          try {
-            if (it && typeof it === "object") {
-              for (const hint of adItemHints) {
-                if (Object.prototype.hasOwnProperty.call(it, hint)) return false;
-              }
-              for (const kk of Object.keys(it)) {
-                if (adKeys.has(kk)) return false;
-              }
-            }
-          } catch (_) {}
-          return true;
-        });
-        // 深入剩余元素
-        for (const it of cur[k]) if (it && typeof it === "object") stack.push(it);
-        continue;
-      }
-
-      // 3) 常见服务端“位置/样式”命名里含 ad 的键，谨慎置空（避免误杀正文字段）
-      if (typeof k === "string" && /(^|[_-])ad([_-]|$)/i.test(k) && typeof v === "object") {
-        // 仅当对象里有明显广告子键时才清理
-        const keys = Object.keys(v || {});
-        if (keys.some(x => adKeys.has(x) || /(^|[_-])ad([_-]|$)/i.test(x))) {
-          cur[k] = Array.isArray(v) ? [] : {};
+        // 命中典型广告容器 → 清空
+        if (adKeys.has(k)) {
+          if (Array.isArray(v)) cur[k] = [];
+          else if (v && typeof v === "object") cur[k] = {};
+          else cur[k] = null;
           continue;
         }
-      }
 
-      // 4) 普通对象，继续深挖
-      if (v && typeof v === "object") {
-        stack.push(v);
+        // 列表中混入广告项：根据特征键过滤
+        if (Array.isArray(v)) {
+          cur[k] = v.filter(it => {
+            if (!it || typeof it !== "object") return true;
+            for (const kk of Object.keys(it)) {
+              if (adKeys.has(kk)) return false;
+            }
+            // 若项中出现广告特征键名
+            if ("ad" in it || "ad_id" in it || "trace_id" in it) return false;
+            return true;
+          });
+          for (const it of cur[k]) if (it && typeof it === "object" && !seen.has(it)) {
+            seen.add(it); stack.push(it);
+          }
+          continue;
+        }
+
+        // 深入对象
+        if (v && typeof v === "object" && !seen.has(v)) {
+          seen.add(v);
+          stack.push(v);
+        }
       }
     }
-  }
-  return obj;
-}
 
-try {
-  if (!$response || !$response.body) { $done({}); }
-  else {
-    const headers = $response.headers || {};
-    const ct = headers["Content-Type"] || headers["content-type"] || "";
-    if (ct && !/json/i.test(ct)) { $done({}); return; }
+    // 常见总开关
+    if ("hasAd" in obj) obj.hasAd = false;
+    if ("show_ad" in obj) obj.show_ad = 0;
+    if ("showAd" in obj) obj.showAd = 0;
+    if ("ad_count" in obj) obj.ad_count = 0;
+
+    return obj;
+  }
+
+  try {
+    if (!$response || !$response.body) return $done({});
+    const h = $response.headers || {};
+    const ct = h["Content-Type"] || h["content-type"] || "";
+    if (ct && !/json/i.test(ct)) return $done({}); // 非 JSON 不处理
 
     let data = JSON.parse($response.body);
     data = scrub(data);
     $done({ body: JSON.stringify(data) });
+  } catch (e) {
+    // 出错不阻断
+    $done({});
   }
-} catch (e) {
-  // 出错不拦截，避免影响正常功能
-  $done({});
-}
+})();
