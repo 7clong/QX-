@@ -4,7 +4,6 @@
 #!version=1.2
 #!date=2025-08-21
 
-[rewrite_local]
 # 公众号文章广告/统计相关接口
 ^https?:\/\/mp\.weixin\.qq\.com\/mp\/getappmsgad url script-response-body local://wechat_moments_ad.js tag=WeChat-Article-Ad
 ^https?:\/\/mp\.weixin\.qq\.com\/mp\/getappmsgext url script-response-body local://wechat_moments_ad.js tag=WeChat-Article-Ext
@@ -13,5 +12,4 @@
 ^https?:\/\/mp\.weixin\.qq\.com\/mp\/ad_complaint url reject tag=WeChat-Ad-Complaint
 ^https?:\/\/mp\.weixin\.qq\.com\/mp\/ad_data_report url reject tag=WeChat-Ad-Report
 
-[mitm]
 hostname = mp.weixin.qq.com
