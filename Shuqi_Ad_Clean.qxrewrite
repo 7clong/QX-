@@ -1,0 +1,14 @@
+#!name=Shuqi Novel Ad Clean (Remote)
+#!desc=去除书旗小说内的列表/详情/弹窗/开屏等广告；只清广告键，尽量不影响正文。与 MitM 配合使用。
+#!author=QuantumultX 规则工程师
+#!version=1.0
+#!date=2025-08-22
+
+hostname = *.shuqi.com, *.shuqireader.com
+
+# 主要业务接口：交由脚本进行“只清广告键”的无损处理（非 JSON 原样放过）
+^https?:\/\/[\w\.-]*shuqi(?:reader)?\.com\/(api|book|reader|shelf|bookcity|startup|splash|home|index|discover|feed|search)\/.* url script-response-body https://raw.githubusercontent.com/7clong/QX-/main/shuqi_ad_clean.js
+
+# 可选：上报/点击/曝光等广告统计（如遇功能异常可注释）
+^https?:\/\/[\w\.-]*shuqi(?:reader)?\.com\/(ads?|advert|adpos|adslot)\/.* url reject-200
+^https?:\/\/[\w\.-]*shuqi(?:reader)?\.com\/.*\/(ad(click|_click|report|log|exposure|track))\b.* url reject-200
