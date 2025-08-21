@@ -1,14 +1,21 @@
-#!name=Shuqi Novel Ad Clean (Remote)
-#!desc=去除书旗小说内的列表/详情/弹窗/开屏等广告；只清广告键，尽量不影响正文。与 MitM 配合使用。
+#!name=Shuqi Ad HardBlock
+#!desc=书旗小说去广告：插屏/开屏/预加载强拦，其他接口脚本净化；尽量不伤正文
 #!author=QuantumultX 规则工程师
-#!version=1.0
-#!date=2025-08-22
+#!version=1.2
 
 hostname = *.shuqi.com, *.shuqireader.com
 
-# 主要业务接口：交由脚本进行“只清广告键”的无损处理（非 JSON 原样放过）
-^https?:\/\/[\w\.-]*shuqi(?:reader)?\.com\/(api|book|reader|shelf|bookcity|startup|splash|home|index|discover|feed|search)\/.* url script-response-body https://raw.githubusercontent.com/7clong/QX-/main/shuqi_ad_clean.js
+# 章节间插屏/开屏/预加载等高概率投放入口 → 统一脚本净化
+^https?:\/\/[\w\.-]*shuq(i|ireader)\.com\/.+\/(ad|ads|advert|insert|interstitial|splash|reward|preload).+ url script-response-body https://raw.githubusercontent.com/7clong/QX-/main/shuqi_ad_strict.js
 
-# 可选：上报/点击/曝光等广告统计（如遇功能异常可注释）
-^https?:\/\/[\w\.-]*shuqi(?:reader)?\.com\/(ads?|advert|adpos|adslot)\/.* url reject-200
-^https?:\/\/[\w\.-]*shuqi(?:reader)?\.com\/.*\/(ad(click|_click|report|log|exposure|track))\b.* url reject-200
+# 阅读页相关接口但带广告特征词 → 脚本净化（防每章一页广告）
+^https?:\/\/[\w\.-]*shuq(i|ireader)\.com\/(?:reader|book|novel|chapter)\/.+(ad|advert|insert|interstitial|splash).+ url script-response-body https://raw.githubusercontent.com/7clong/QX-/main/shuqi_ad_strict.js
+
+# 常规业务接口兜底：出现广告关键字的一律净化
+^https?:\/\/[\w\.-]*shuq(i|ireader)\.com\/.+ url script-response-body https://raw.githubusercontent.com/7clong/QX-/main/shuqi_ad_strict.js
+
+# 广告上报/点击/曝光 噪音 → 直接回 200
+^https?:\/\/[\w\.-]*shuq(i|ireader)\.com\/.+\/(ad(_?report|Report)?|exposure|click(_?ad)?|adlog|ads\/report).+ url reject-200
+
+# 广告静态资源（图片/视频）
+^https?:\/\/[\w\.-]*shuq(i|ireader)\.com\/.+\/(ad|ads)\/.+\.(mp4|m3u8|jpg|jpeg|png|gif|webp) url reject
