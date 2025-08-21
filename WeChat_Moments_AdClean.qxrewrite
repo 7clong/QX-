@@ -1,15 +1,16 @@
-#!name=WeChat Ad Clean
-#!desc=去除微信朋友圈广告
+#!name=WeChat Ad Clean (Wide)
+#!desc=朋友圈/公众号广告净化；脚本作用于 mp.weixin.qq.com/mp/ 下的 JSON 响应
 #!author=7clong
+#!version=1.1
 
 hostname = mp.weixin.qq.com
 
-# 公众号文章广告
-^https?:\/\/mp\.weixin\.qq\.com\/mp\/getappmsgad url script-response-body https://raw.githubusercontent.com/7clong/QX-/main/wechat_moments_ad.js
+# 公众号文章广告与扩展广告
+^https?:\/\/mp\.weixin\.qq\.com\/mp\/getappmsg(ad|ext) url script-response-body https://raw.githubusercontent.com/7clong/QX-/main/wechat_moments_ad.js
 
-# 文章扩展广告
-^https?:\/\/mp\.weixin\.qq\.com\/mp\/getappmsgext url script-response-body https://raw.githubusercontent.com/7clong/QX-/main/wechat_moments_ad.js
+# 朋友圈相关与其他 mp 下潜在广告接口：统一交由脚本做“仅清广告键”的无损处理
+^https?:\/\/mp\.weixin\.qq\.com\/mp\/.+ url script-response-body https://raw.githubusercontent.com/7clong/QX-/main/wechat_moments_ad.js
 
-# 广告上报/投诉
+# 噪音上报/投诉，直接拒绝（非必须，可开可关）
 ^https?:\/\/mp\.weixin\.qq\.com\/mp\/ad_complaint url reject
 ^https?:\/\/mp\.weixin\.qq\.com\/mp\/ad_data_report url reject
