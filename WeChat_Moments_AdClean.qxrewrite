@@ -1,0 +1,17 @@
+#!name=WeChat Moments Ad Clean
+#!desc=去除微信朋友圈与公众号内广告；保留正常内容与功能。需要开启 HTTPS 解密。
+#!author=QuantumultX 规则工程师
+#!version=1.2
+#!date=2025-08-21
+
+[rewrite_local]
+# 公众号文章广告/统计相关接口
+^https?:\/\/mp\.weixin\.qq\.com\/mp\/getappmsgad url script-response-body local://wechat_moments_ad.js tag=WeChat-Article-Ad
+^https?:\/\/mp\.weixin\.qq\.com\/mp\/getappmsgext url script-response-body local://wechat_moments_ad.js tag=WeChat-Article-Ext
+
+# 广告上报/投诉等“噪音”接口，拒绝以减少跟踪
+^https?:\/\/mp\.weixin\.qq\.com\/mp\/ad_complaint url reject tag=WeChat-Ad-Complaint
+^https?:\/\/mp\.weixin\.qq\.com\/mp\/ad_data_report url reject tag=WeChat-Ad-Report
+
+[mitm]
+hostname = mp.weixin.qq.com
