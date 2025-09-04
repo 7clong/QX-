@@ -1,87 +1,104 @@
 /**
  * shuqi_vip_2099.js
- * Quantumult X script-response-body
- * 目标：让书旗显示 VIP 有效，过期时间伪装到 2099-12-31；并把 needPay/needVip 置为 false
- * 注意：仅改前端展示所需字段，服务端仍可能在关键购买接口做校验
+ * 说明：只做“去广告字段清理”和“上报开关关闭”，不改动任何会员/付费/鉴权相关字段。
+ * 兼容 Quantumult X script-response-body。
  */
+
 (function () {
   try {
     if (!$response || !$response.body) return $done({});
     const ct = ($response.headers?.["Content-Type"] || $response.headers?.["content-type"] || "");
-    if (ct && !/json/i.test(ct)) return $done({}); // 非 JSON 不处理
+    if (ct && !/json|javascript/i.test(ct)) return $done({}); // 只处理 JSON
 
-    const EXP_SEC = 4102416000;        // 2099-12-31 00:00:00 UTC in seconds (approx)
-    const EXP_MS  = EXP_SEC * 1000;    // ms
-    const EXP_STR = "2099-12-31 23:59:59";
+    let data = JSON.parse($response.body);
 
-    function setVipFlags(o) {
-      // 通用布尔位
-      const boolKeys = [
-        "isVip","vip","svip","is_vip","vip_flag","vipStatus","vip_status","vip_enable",
-        "vip_open","vipActive","vip_active","has_vip","user_vip","is_member","member","isSvip"
-      ];
-      for (const k of boolKeys) if (k in o) o[k] = true;
+    // 需要清理或置空的键名模式（大小写不敏感）
+    const KEY_PATTERNS = [
+      /^(ad|ads|advert|adverts?|ad_list|adConfig|ad_config|adInfo|ad_info)$/i,
+      /^(banner|banners|splash|startup_?ad|launch_?ad|open_?screen)$/i,
+      /^(exposure|click(_?ad)?|report(_?ad)?|track(ing)?|bi(_?log)?|log_server)$/i,
+      /^(commercials?|operations?|operation_list)$/i
+    ];
 
-      // 解锁相关
-      const unlockKeys = ["needPay","need_pay","needVip","need_vip","limit","limited","locked","is_locked","isPaid","paid"];
-      for (const k of unlockKeys) if (k in o) o[k] = false;
+    // 值为数组时，常见广告位字段名
+    const ARRAY_KEYS = [
+      "ads","ad","adList","ad_list","adItems","ad_items",
+      "banner","banners","modules","operations","operation_list",
+      "splash","startup_ad","launch_ad","open_screen"
+    ];
 
-      // 过期时间（多字段兼容，字符串/秒/毫秒）
-      const expKeys = [
-        "vipExpireTime","vip_expire_time","expire_time","expireTime","svip_expire_time",
-        "memberExpireTime","member_expire_time","vip_deadline","vipDeadline","vip_end_time"
-      ];
-      for (const k of expKeys) {
-        if (k in o) {
-          if (typeof o[k] === "string") o[k] = EXP_STR;
-          else if (typeof o[k] === "number") {
-            // 猜测单位：小于 10^11 认为是秒，否则是毫秒
-            o[k] = Math.abs(o[k]) < 1e11 ? EXP_SEC : EXP_MS;
-          } else {
-            o[k] = EXP_MS;
-          }
-        }
-      }
+    // 某些布尔/开关类配置，统一关闭上报或广告开关
+    const BOOL_KEYS_TO_FALSE = [
+      "enableAd","enable_ad","adEnabled","ad_enabled",
+      "enableTrack","enable_track","enableReport","enable_report",
+      "enableExposure","enable_exposure"
+    ];
 
-      // 等级/类型
-      const typKeys = ["vipLevel","vip_level","vipType","vip_type","member_type","memberLevel"];
-      for (const k of typKeys) if (k in o) o[k] = 1;
-
-      // 引导/弹窗/角标
-      const offKeys = ["showVipGuide","show_vip_guide","vip_guide","vipGuide","vip_banner","vipBanner","vipToast","show_ad","ad_count"];
-      for (const k of offKeys) if (k in o) o[k] = 0;
-
-      return o;
-    }
-
-    function scrub(obj) {
+    // 递归清理器：删除或置空广告相关字段，同时不触碰会员/付费/鉴权
+    function clean(obj) {
       if (!obj || typeof obj !== "object") return obj;
+
       if (Array.isArray(obj)) {
-        return obj.map(scrub);
+        // 数组：过滤掉疑似广告的元素
+        // 常见结构：[{type:"ad"},{ad:...},{module:"banner"}]
+        const filtered = obj
+          .map(item => clean(item))
+          .filter(item => !looksLikeAdItem(item));
+        return filtered;
       }
-      // 一级字段
-      setVipFlags(obj);
 
-      // 常见容器字段里也改
-      const fields = [
-        "data","result","user","userInfo","user_info","profile","member","vipInfo","vip_info",
-        "benefit","benefits","payload","content","ext","extra","config","configs","summary"
-      ];
-      for (const f of fields) if (obj[f] && typeof obj[f] === "object") obj[f] = scrub(obj[f]);
-
-      // 列表里逐项改
       for (const k of Object.keys(obj)) {
         const v = obj[k];
-        if (Array.isArray(v)) obj[k] = v.map(it => scrub(it));
-        else if (v && typeof v === "object") obj[k] = scrub(v);
+
+        // 如果键名本身像广告字段，直接删除或置空
+        if (KEY_PATTERNS.some(p => p.test(k))) {
+          // 保守处理：统一清成“空容器”，避免客户端解析异常
+          obj[k] = Array.isArray(v) ? [] : (typeof v === "object" ? {} : null);
+          continue;
+        }
+
+        // 一些数组键里混有广告条目，做细粒度过滤
+        if (ARRAY_KEYS.includes(k) && Array.isArray(v)) {
+          obj[k] = v.map(it => clean(it)).filter(it => !looksLikeAdItem(it));
+          continue;
+        }
+
+        // 关闭一切与上报/曝光/广告相关的布尔开关
+        if (BOOL_KEYS_TO_FALSE.includes(k) && typeof v === "boolean") {
+          obj[k] = false;
+          continue;
+        }
+
+        // 继续向下清理
+        if (v && typeof v === "object") {
+          obj[k] = clean(v);
+        }
       }
       return obj;
     }
 
-    let j = JSON.parse($response.body);
-    j = scrub(j);
-    $done({ body: JSON.stringify(j) });
+    // 粗略判断一个对象是否“像广告项”
+    function looksLikeAdItem(x) {
+      if (!x || typeof x !== "object") return false;
+      const s = JSON.stringify(x).toLowerCase();
+
+      // 命中关键词过多时，基本可以断定是广告
+      const hits = [
+        "ad", "advert", "banner", "splash", "track", "exposure",
+        "report", "click", "deeplink", "landing", "monitor", "impression"
+      ].reduce((n, w) => n + (s.includes(w) ? 1 : 0), 0);
+
+      // 避免误杀：如果包含“vip/pay/purchase/subscription”等词，不动
+      if (/\b(vip|svip|pay|purchase|order|subscribe|subscription|rights?)\b/i.test(s)) {
+        return false;
+      }
+      return hits >= 2;
+    }
+
+    data = clean(data);
+    $done({ body: JSON.stringify(data) });
   } catch (e) {
+    // 静默失败，不干扰正常业务
     $done({});
   }
 })();
